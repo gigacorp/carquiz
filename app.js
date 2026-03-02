@@ -10,6 +10,7 @@
       stats: {}
     },
     math: {
+      minFactor: 1,
       maxFactor: 12,
       currentFact: null,
       stats: {}
@@ -38,6 +39,7 @@
     spellingSummary: document.getElementById("spellingSummary"),
     spellingMissedList: document.getElementById("spellingMissedList"),
     spellingLessonProgress: document.getElementById("spellingLessonProgress"),
+    minFactor: document.getElementById("minFactor"),
     maxFactor: document.getElementById("maxFactor"),
     startMathBtn: document.getElementById("startMathBtn"),
     stopMathBtn: document.getElementById("stopMathBtn"),
@@ -301,21 +303,33 @@
   }
 
   function bindMath() {
-    els.maxFactor.addEventListener("change", () => {
-      const value = Number(els.maxFactor.value);
-      state.math.maxFactor = clamp(Number.isFinite(value) ? value : 12, 2, 20);
+    const applyMathRangeFromInputs = () => {
+      const minInput = Number(els.minFactor.value);
+      const maxInput = Number(els.maxFactor.value);
+      const min = clamp(Number.isFinite(minInput) ? minInput : state.math.minFactor, 1, 20);
+      const max = clamp(Number.isFinite(maxInput) ? maxInput : state.math.maxFactor, 1, 20);
+      state.math.minFactor = Math.min(min, max);
+      state.math.maxFactor = Math.max(min, max);
+      els.minFactor.value = String(state.math.minFactor);
       els.maxFactor.value = String(state.math.maxFactor);
       state.math.currentFact = null;
       saveState();
+    };
+
+    els.minFactor.addEventListener("change", () => {
+      applyMathRangeFromInputs();
+      nextMathQuestion();
+    });
+
+    els.maxFactor.addEventListener("change", () => {
+      applyMathRangeFromInputs();
       nextMathQuestion();
     });
 
     els.checkMathBtn.addEventListener("click", checkMathAnswer);
     els.nextMathBtn.addEventListener("click", skipMathQuestion);
     els.startMathBtn.addEventListener("click", () => {
-      state.math.maxFactor = clamp(Number(els.maxFactor.value) || 12, 2, 20);
-      els.maxFactor.value = String(state.math.maxFactor);
-      saveState();
+      applyMathRangeFromInputs();
       startLesson("math");
       setModeStarted("math", true);
       nextMathQuestion();
@@ -346,8 +360,8 @@
       return;
     }
     const facts = [];
-    for (let a = 1; a <= state.math.maxFactor; a += 1) {
-      for (let b = 1; b <= state.math.maxFactor; b += 1) {
+    for (let a = state.math.minFactor; a <= state.math.maxFactor; a += 1) {
+      for (let b = state.math.minFactor; b <= state.math.maxFactor; b += 1) {
         facts.push([a, b]);
       }
     }
@@ -636,8 +650,13 @@
   }
 
   function hydrateInputs() {
+    const min = clamp(Number(state.math.minFactor) || 1, 1, 20);
+    const max = clamp(Number(state.math.maxFactor) || 12, 1, 20);
+    state.math.minFactor = Math.min(min, max);
+    state.math.maxFactor = Math.max(min, max);
     els.listName.value = state.spelling.listName;
     els.wordList.value = state.spelling.words.join("\n");
+    els.minFactor.value = String(state.math.minFactor);
     els.maxFactor.value = String(state.math.maxFactor);
   }
 

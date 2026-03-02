@@ -11,7 +11,7 @@ All app data is stored in browser `localStorage` (no backend).
 
 - Single-page static app (`index.html`, `styles.css`, `app.js`)
 - Spelling list editor (one word per line)
-- Multiplication range selection (up to `20 x 20`)
+- Multiplication range selection with min and max factors (up to `20 x 20`)
 - 10-question lessons for both spelling and math modes
 - Mistake tracking for both modes
 - Weighted question selection so missed items appear more often
