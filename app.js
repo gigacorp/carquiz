@@ -1,6 +1,9 @@
  (function () {
   const STORAGE_KEY = "practiceHub.v1";
   const LESSON_SIZE = 10;
+  const WEATHER_MIN = -20;
+  const WEATHER_MAX = 20;
+  const WEATHER_START = 0;
 
   const defaultState = {
     spelling: {
@@ -61,7 +64,7 @@
   let funDpr = 1;
   let autoAdvanceTimer = null;
   let pendingAutoAdvance = false;
-  let weatherScore = 0;
+  let weatherScore = WEATHER_START;
   let roadOffset = 0;
   let carProgress = 0;
   let carTargetProgress = 0;
@@ -211,7 +214,7 @@
       stat.streak += 1;
       const finished = recordLessonAnswer("spelling", true);
       setFeedback(els.spellingFeedback, finished ? "Correct! Finishing lesson..." : "Correct! Loading next word...", true);
-      weatherScore = clamp(weatherScore + 2, -20, 20);
+      weatherScore = clamp(weatherScore + 2, WEATHER_MIN, WEATHER_MAX);
       triggerCorrectEffect(`Nice! ${state.spelling.currentWord}`);
       if (finished) {
         queueNextQuestion(() => completeLesson("spelling", els.spellingFeedback, els.spellingPrompt));
@@ -229,7 +232,7 @@
           : `Not quite. Correct spelling: ${state.spelling.currentWord}. Loading next word...`,
         false
       );
-      weatherScore = clamp(weatherScore - 2, -20, 20);
+      weatherScore = clamp(weatherScore - 2, WEATHER_MIN, WEATHER_MAX);
       triggerWrongEffect();
       if (finished) {
         queueNextQuestion(() => completeLesson("spelling", els.spellingFeedback, els.spellingPrompt));
@@ -261,7 +264,7 @@
     stat.attempts += 1;
     stat.mistakes += 1;
     stat.streak = 0;
-    weatherScore = clamp(weatherScore - 2, -20, 20);
+    weatherScore = clamp(weatherScore - 2, WEATHER_MIN, WEATHER_MAX);
     triggerWrongEffect();
     const finished = recordLessonAnswer("spelling", false);
     setFeedback(els.spellingFeedback, "Skipped. Loading next word...", false);
@@ -407,7 +410,7 @@
       stat.streak += 1;
       const finished = recordLessonAnswer("math", true);
       setFeedback(els.mathFeedback, finished ? "Correct! Finishing lesson..." : "Correct! Loading next fact...", true);
-      weatherScore = clamp(weatherScore + 2, -20, 20);
+      weatherScore = clamp(weatherScore + 2, WEATHER_MIN, WEATHER_MAX);
       triggerCorrectEffect(`Great! ${a} x ${b} = ${expected}`);
       if (finished) {
         queueNextQuestion(() => completeLesson("math", els.mathFeedback, els.mathPrompt));
@@ -423,7 +426,7 @@
         finished ? `Not quite. ${a} × ${b} = ${expected}. Finishing lesson...` : `Not quite. ${a} × ${b} = ${expected}. Loading next fact...`,
         false
       );
-      weatherScore = clamp(weatherScore - 2, -20, 20);
+      weatherScore = clamp(weatherScore - 2, WEATHER_MIN, WEATHER_MAX);
       triggerWrongEffect();
       if (finished) {
         queueNextQuestion(() => completeLesson("math", els.mathFeedback, els.mathPrompt));
@@ -456,7 +459,7 @@
     stat.attempts += 1;
     stat.mistakes += 1;
     stat.streak = 0;
-    weatherScore = clamp(weatherScore - 2, -20, 20);
+    weatherScore = clamp(weatherScore - 2, WEATHER_MIN, WEATHER_MAX);
     triggerWrongEffect();
     const finished = recordLessonAnswer("math", false);
     setFeedback(els.mathFeedback, "Skipped. Loading next fact...", false);
@@ -528,6 +531,7 @@
 
   function startLesson(mode) {
     setLessonFor(mode, createLessonState());
+    weatherScore = WEATHER_START;
     renderLessonProgress(mode);
     syncCarToLesson();
     updateCanvasStatus();
@@ -770,10 +774,10 @@
   }
 
   function drawSky(width, height) {
-    const sunFactor = (weatherScore + 20) / 40;
-    const topColor = mixColor("#6276a8", "#79d9ff", sunFactor);
-    const bottomColor = mixColor("#6d7ba0", "#d9f7ff", sunFactor);
-    const groundColor = mixColor("#6b8f59", "#87d267", sunFactor);
+    const sunFactor = weatherBrightness();
+    const topColor = mixColor("#566288", "#79d9ff", sunFactor);
+    const bottomColor = mixColor("#667597", "#d9f7ff", sunFactor);
+    const groundColor = mixColor("#607d51", "#87d267", sunFactor);
 
     const sky = funCtx.createLinearGradient(0, 0, 0, height);
     sky.addColorStop(0, topColor);
@@ -786,11 +790,13 @@
   }
 
   function drawSun(width, height, timestamp) {
-    const sunFactor = (weatherScore + 20) / 40;
-    const alpha = 0.2 + sunFactor * 0.9;
+    const sunFactor = weatherBrightness();
+    const alpha = 0.08 + sunFactor * 0.9;
     const pulse = Math.sin(timestamp * 0.004) * 2;
     const x = width - 62;
-    const y = 45;
+    const sunTopY = 32;
+    const sunBottomY = 78;
+    const y = sunBottomY - (sunBottomY - sunTopY) * sunFactor;
     const radius = 22 + pulse;
 
     funCtx.globalAlpha = alpha;
@@ -812,7 +818,7 @@
   }
 
   function drawClouds(width, height) {
-    const stormFactor = 1 - (weatherScore + 20) / 40;
+    const stormFactor = 1 - weatherBrightness();
     const dark = mixColor("#ffffff", "#5e6988", stormFactor);
 
     clouds.forEach((cloud) => {
@@ -839,7 +845,7 @@
   }
 
   function drawRain(width, height) {
-    const stormFactor = 1 - (weatherScore + 20) / 40;
+    const stormFactor = 1 - weatherBrightness();
     const density = Math.max(0, Math.floor((stormFactor - 0.5) * 120));
 
     for (let i = raindrops.length - 1; i >= 0; i -= 1) {
@@ -1076,13 +1082,17 @@
       els.canvasStatus.textContent = `${lessonText} | Weather: Super sunny race day`;
     } else if (weatherScore >= 6) {
       els.canvasStatus.textContent = `${lessonText} | Weather: Mostly sunny`;
-    } else if (weatherScore >= -5) {
-      els.canvasStatus.textContent = `${lessonText} | Weather: Fair skies`;
+    } else if (weatherScore >= -4) {
+      els.canvasStatus.textContent = `${lessonText} | Weather: Medium`;
     } else if (weatherScore >= -13) {
       els.canvasStatus.textContent = `${lessonText} | Weather: Cloudy`;
     } else {
       els.canvasStatus.textContent = `${lessonText} | Weather: Stormy`;
     }
+  }
+
+  function weatherBrightness() {
+    return (weatherScore - WEATHER_MIN) / (WEATHER_MAX - WEATHER_MIN);
   }
 
   function mixColor(a, b, t) {
