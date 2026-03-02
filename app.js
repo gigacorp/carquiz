@@ -1,5 +1,6 @@
  (function () {
   const STORAGE_KEY = "practiceHub.v1";
+  const LESSON_SIZE = 10;
 
   const defaultState = {
     spelling: {
@@ -36,6 +37,7 @@
     spellingFeedback: document.getElementById("spellingFeedback"),
     spellingSummary: document.getElementById("spellingSummary"),
     spellingMissedList: document.getElementById("spellingMissedList"),
+    spellingLessonProgress: document.getElementById("spellingLessonProgress"),
     maxFactor: document.getElementById("maxFactor"),
     startMathBtn: document.getElementById("startMathBtn"),
     stopMathBtn: document.getElementById("stopMathBtn"),
@@ -46,6 +48,7 @@
     mathFeedback: document.getElementById("mathFeedback"),
     mathSummary: document.getElementById("mathSummary"),
     mathMissedList: document.getElementById("mathMissedList"),
+    mathLessonProgress: document.getElementById("mathLessonProgress"),
     spellingPanel: document.getElementById("spelling"),
     mathPanel: document.getElementById("math"),
     funCanvas: document.getElementById("funCanvas"),
@@ -58,8 +61,8 @@
   let pendingAutoAdvance = false;
   let weatherScore = 0;
   let roadOffset = 0;
-  let carBoost = 0;
-  let carX = 24;
+  let carProgress = 0;
+  let carTargetProgress = 0;
   let stormFlash = 0;
   let sceneMessage = "";
   let sceneMessageFrames = 0;
@@ -68,7 +71,9 @@
   const particles = [];
   const gameState = {
     spellingStarted: false,
-    mathStarted: false
+    mathStarted: false,
+    spellingLesson: null,
+    mathLesson: null
   };
 
   init();
@@ -81,6 +86,8 @@
     hydrateInputs();
     renderSpellingStats();
     renderMathStats();
+    renderLessonProgress("spelling");
+    renderLessonProgress("math");
     updateCanvasStatus();
     setModeStarted("spelling", false);
     setModeStarted("math", false);
@@ -108,6 +115,7 @@
         els.spellingPrompt.textContent = "Add words and save your list first.";
         return;
       }
+      startLesson("spelling");
       setModeStarted("spelling", true);
       nextSpellingQuestion();
     });
@@ -115,10 +123,11 @@
       cancelAutoAdvance();
       setModeStarted("spelling", false);
       resetFeedback(els.spellingFeedback);
+      renderLessonProgress("spelling");
     });
 
     els.checkSpellingBtn.addEventListener("click", checkSpellingAnswer);
-    els.nextSpellingBtn.addEventListener("click", nextSpellingQuestion);
+    els.nextSpellingBtn.addEventListener("click", skipSpellingQuestion);
     els.spellingAnswer.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         checkSpellingAnswer();
@@ -143,6 +152,15 @@
   function nextSpellingQuestion() {
     if (!gameState.spellingStarted) return;
     cancelAutoAdvance();
+    const lesson = lessonFor("spelling");
+    if (!lesson) {
+      startLesson("spelling");
+    } else if (lesson.done) {
+      startLesson("spelling");
+    } else if (lesson.asked >= lesson.total) {
+      completeLesson("spelling", els.spellingFeedback, els.spellingPrompt);
+      return;
+    }
     if (state.spelling.words.length === 0) {
       els.spellingPrompt.textContent = "Save a list to begin practice.";
       state.spelling.currentWord = null;
@@ -179,6 +197,8 @@
     if (!gameState.spellingStarted) return;
     if (!state.spelling.currentWord) return;
     if (pendingAutoAdvance) return;
+    const lesson = lessonFor("spelling");
+    if (!lesson || lesson.done) return;
 
     const answer = normalizeWord(els.spellingAnswer.value);
     const expected = normalizeWord(state.spelling.currentWord);
@@ -187,21 +207,69 @@
 
     if (answer === expected) {
       stat.streak += 1;
-      setFeedback(els.spellingFeedback, "Correct! Loading next word...", true);
+      const finished = recordLessonAnswer("spelling", true);
+      setFeedback(els.spellingFeedback, finished ? "Correct! Finishing lesson..." : "Correct! Loading next word...", true);
       weatherScore = clamp(weatherScore + 2, -20, 20);
       triggerCorrectEffect(`Nice! ${state.spelling.currentWord}`);
-      queueNextQuestion(nextSpellingQuestion);
+      if (finished) {
+        queueNextQuestion(() => completeLesson("spelling", els.spellingFeedback, els.spellingPrompt));
+      } else {
+        queueNextQuestion(nextSpellingQuestion);
+      }
     } else {
       stat.mistakes += 1;
       stat.streak = 0;
-      setFeedback(els.spellingFeedback, `Not quite. Correct spelling: ${state.spelling.currentWord}`, false);
+      const finished = recordLessonAnswer("spelling", false);
+      setFeedback(
+        els.spellingFeedback,
+        finished
+          ? `Not quite. Correct spelling: ${state.spelling.currentWord}. Finishing lesson...`
+          : `Not quite. Correct spelling: ${state.spelling.currentWord}. Loading next word...`,
+        false
+      );
       weatherScore = clamp(weatherScore - 2, -20, 20);
       triggerWrongEffect();
+      if (finished) {
+        queueNextQuestion(() => completeLesson("spelling", els.spellingFeedback, els.spellingPrompt));
+      } else {
+        queueNextQuestion(nextSpellingQuestion);
+      }
     }
 
     updateCanvasStatus();
     saveState();
     renderSpellingStats();
+  }
+
+  function skipSpellingQuestion() {
+    if (!gameState.spellingStarted) return;
+    const lesson = lessonFor("spelling");
+    if (lesson && lesson.done) {
+      startLesson("spelling");
+      nextSpellingQuestion();
+      return;
+    }
+    if (!state.spelling.currentWord) {
+      nextSpellingQuestion();
+      return;
+    }
+    if (pendingAutoAdvance) return;
+    const key = normalizeWord(state.spelling.currentWord);
+    const stat = getStat(state.spelling.stats, key);
+    stat.attempts += 1;
+    stat.mistakes += 1;
+    stat.streak = 0;
+    weatherScore = clamp(weatherScore - 2, -20, 20);
+    triggerWrongEffect();
+    const finished = recordLessonAnswer("spelling", false);
+    setFeedback(els.spellingFeedback, "Skipped. Loading next word...", false);
+    saveState();
+    renderSpellingStats();
+    if (finished) {
+      queueNextQuestion(() => completeLesson("spelling", els.spellingFeedback, els.spellingPrompt));
+    } else {
+      queueNextQuestion(nextSpellingQuestion);
+    }
   }
 
   function renderSpellingStats() {
@@ -243,11 +311,12 @@
     });
 
     els.checkMathBtn.addEventListener("click", checkMathAnswer);
-    els.nextMathBtn.addEventListener("click", nextMathQuestion);
+    els.nextMathBtn.addEventListener("click", skipMathQuestion);
     els.startMathBtn.addEventListener("click", () => {
       state.math.maxFactor = clamp(Number(els.maxFactor.value) || 12, 2, 20);
       els.maxFactor.value = String(state.math.maxFactor);
       saveState();
+      startLesson("math");
       setModeStarted("math", true);
       nextMathQuestion();
     });
@@ -255,6 +324,7 @@
       cancelAutoAdvance();
       setModeStarted("math", false);
       resetFeedback(els.mathFeedback);
+      renderLessonProgress("math");
     });
     els.mathAnswer.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -266,6 +336,15 @@
   function nextMathQuestion() {
     if (!gameState.mathStarted) return;
     cancelAutoAdvance();
+    const lesson = lessonFor("math");
+    if (!lesson) {
+      startLesson("math");
+    } else if (lesson.done) {
+      startLesson("math");
+    } else if (lesson.asked >= lesson.total) {
+      completeLesson("math", els.mathFeedback, els.mathPrompt);
+      return;
+    }
     const facts = [];
     for (let a = 1; a <= state.math.maxFactor; a += 1) {
       for (let b = 1; b <= state.math.maxFactor; b += 1) {
@@ -300,6 +379,8 @@
     if (!gameState.mathStarted) return;
     if (!state.math.currentFact) return;
     if (pendingAutoAdvance) return;
+    const lesson = lessonFor("math");
+    if (!lesson || lesson.done) return;
 
     const [a, b] = state.math.currentFact;
     const key = factKey(a, b);
@@ -310,21 +391,68 @@
 
     if (Number.isFinite(entered) && entered === expected) {
       stat.streak += 1;
-      setFeedback(els.mathFeedback, "Correct! Loading next fact...", true);
+      const finished = recordLessonAnswer("math", true);
+      setFeedback(els.mathFeedback, finished ? "Correct! Finishing lesson..." : "Correct! Loading next fact...", true);
       weatherScore = clamp(weatherScore + 2, -20, 20);
       triggerCorrectEffect(`Great! ${a} x ${b} = ${expected}`);
-      queueNextQuestion(nextMathQuestion);
+      if (finished) {
+        queueNextQuestion(() => completeLesson("math", els.mathFeedback, els.mathPrompt));
+      } else {
+        queueNextQuestion(nextMathQuestion);
+      }
     } else {
       stat.mistakes += 1;
       stat.streak = 0;
-      setFeedback(els.mathFeedback, `Not quite. ${a} × ${b} = ${expected}`, false);
+      const finished = recordLessonAnswer("math", false);
+      setFeedback(
+        els.mathFeedback,
+        finished ? `Not quite. ${a} × ${b} = ${expected}. Finishing lesson...` : `Not quite. ${a} × ${b} = ${expected}. Loading next fact...`,
+        false
+      );
       weatherScore = clamp(weatherScore - 2, -20, 20);
       triggerWrongEffect();
+      if (finished) {
+        queueNextQuestion(() => completeLesson("math", els.mathFeedback, els.mathPrompt));
+      } else {
+        queueNextQuestion(nextMathQuestion);
+      }
     }
 
     updateCanvasStatus();
     saveState();
     renderMathStats();
+  }
+
+  function skipMathQuestion() {
+    if (!gameState.mathStarted) return;
+    const lesson = lessonFor("math");
+    if (lesson && lesson.done) {
+      startLesson("math");
+      nextMathQuestion();
+      return;
+    }
+    if (!state.math.currentFact) {
+      nextMathQuestion();
+      return;
+    }
+    if (pendingAutoAdvance) return;
+    const [a, b] = state.math.currentFact;
+    const key = factKey(a, b);
+    const stat = getStat(state.math.stats, key);
+    stat.attempts += 1;
+    stat.mistakes += 1;
+    stat.streak = 0;
+    weatherScore = clamp(weatherScore - 2, -20, 20);
+    triggerWrongEffect();
+    const finished = recordLessonAnswer("math", false);
+    setFeedback(els.mathFeedback, "Skipped. Loading next fact...", false);
+    saveState();
+    renderMathStats();
+    if (finished) {
+      queueNextQuestion(() => completeLesson("math", els.mathFeedback, els.mathPrompt));
+    } else {
+      queueNextQuestion(nextMathQuestion);
+    }
   }
 
   function renderMathStats() {
@@ -363,15 +491,111 @@
     renderSpellingStats();
   }
 
+  function createLessonState() {
+    return {
+      total: LESSON_SIZE,
+      asked: 0,
+      correct: 0,
+      done: false
+    };
+  }
+
+  function lessonFor(mode) {
+    return mode === "spelling" ? gameState.spellingLesson : gameState.mathLesson;
+  }
+
+  function setLessonFor(mode, lesson) {
+    if (mode === "spelling") {
+      gameState.spellingLesson = lesson;
+      return;
+    }
+    gameState.mathLesson = lesson;
+  }
+
+  function startLesson(mode) {
+    setLessonFor(mode, createLessonState());
+    renderLessonProgress(mode);
+    syncCarToLesson();
+    updateCanvasStatus();
+  }
+
+  function completeLesson(mode, feedbackEl, promptEl) {
+    const lesson = lessonFor(mode);
+    if (!lesson) return;
+    lesson.done = true;
+    const accuracy = lesson.asked > 0 ? Math.round((lesson.correct / lesson.asked) * 100) : 0;
+    promptEl.textContent = "Lesson complete!";
+    setFeedback(feedbackEl, `Lesson result: ${lesson.correct}/${lesson.total} correct (${accuracy}% accuracy).`, true);
+    if (mode === "spelling") {
+      state.spelling.currentWord = null;
+    } else {
+      state.math.currentFact = null;
+    }
+    renderLessonProgress(mode);
+    syncCarToLesson();
+    updateCanvasStatus();
+  }
+
+  function recordLessonAnswer(mode, isCorrect) {
+    const lesson = lessonFor(mode);
+    if (!lesson || lesson.done) return false;
+    lesson.asked += 1;
+    if (isCorrect) {
+      lesson.correct += 1;
+    }
+    renderLessonProgress(mode);
+    syncCarToLesson();
+    updateCanvasStatus();
+    return lesson.asked >= lesson.total;
+  }
+
+  function renderLessonProgress(mode) {
+    const lesson = lessonFor(mode);
+    const el = mode === "spelling" ? els.spellingLessonProgress : els.mathLessonProgress;
+    if (!el) return;
+    if (!lesson) {
+      el.textContent = `Lesson progress: 0/${LESSON_SIZE} (0%)`;
+      return;
+    }
+    const percent = Math.round((lesson.asked / lesson.total) * 100);
+    if (lesson.done) {
+      const accuracy = lesson.asked > 0 ? Math.round((lesson.correct / lesson.asked) * 100) : 0;
+      el.textContent = `Lesson complete: ${lesson.correct}/${lesson.total} correct (${accuracy}% accuracy)`;
+      return;
+    }
+    el.textContent = `Lesson progress: ${lesson.asked}/${lesson.total} (${percent}%)`;
+  }
+
+  function activeLesson() {
+    if (gameState.spellingStarted) return gameState.spellingLesson;
+    if (gameState.mathStarted) return gameState.mathLesson;
+    if (gameState.spellingLesson && gameState.spellingLesson.done) return gameState.spellingLesson;
+    if (gameState.mathLesson && gameState.mathLesson.done) return gameState.mathLesson;
+    return null;
+  }
+
+  function syncCarToLesson() {
+    const lesson = activeLesson();
+    if (!lesson) {
+      carTargetProgress = 0;
+      return;
+    }
+    carTargetProgress = lesson.total > 0 ? lesson.asked / lesson.total : 0;
+  }
+
   function setModeStarted(mode, started) {
     if (mode === "spelling") {
       gameState.spellingStarted = started;
       els.spellingPanel.classList.toggle("game-started", started);
+      syncCarToLesson();
+      updateCanvasStatus();
       updateGlobalPlayingState();
       return;
     }
     gameState.mathStarted = started;
     els.mathPanel.classList.toggle("game-started", started);
+    syncCarToLesson();
+    updateCanvasStatus();
     updateGlobalPlayingState();
   }
 
@@ -632,9 +856,7 @@
     funCtx.fillStyle = "#586176";
     funCtx.fillRect(0, roadY, width, height * 0.2);
 
-    if (carBoost > 0.2) {
-      roadOffset += 1.8 + carBoost * 0.12;
-    }
+    roadOffset += 0.8;
     if (roadOffset > 40) roadOffset = 0;
     funCtx.fillStyle = "#ffe69b";
     for (let x = -40 + roadOffset; x < width; x += 40) {
@@ -643,18 +865,13 @@
   }
 
   function drawCar(width, height, timestamp) {
-    if (carBoost > 0.05) {
-      carX += carBoost;
-      carBoost *= 0.96;
-      if (carX > width + 110) {
-        carX = 24;
-        carBoost = 0;
-      }
-    }
-
+    carProgress += (carTargetProgress - carProgress) * 0.14;
+    carProgress = Math.max(0, Math.min(1, carProgress));
     const wobble = Math.sin(timestamp * 0.012) * 2;
     const roadY = height * 0.73;
-    const x = carX;
+    const minX = 24;
+    const maxX = Math.max(minX, width - 120);
+    const x = minX + (maxX - minX) * carProgress;
     const y = roadY - 24 + wobble;
 
     funCtx.fillStyle = "#ff5f5f";
@@ -751,7 +968,6 @@
 
   function triggerCorrectEffect(message) {
     playCorrectSound();
-    carBoost = Math.min(36, carBoost + 34);
     sceneMessage = message;
     sceneMessageFrames = 80;
     emitParticles({
@@ -831,16 +1047,22 @@
 
   function updateCanvasStatus() {
     if (!els.canvasStatus) return;
+    const lesson = activeLesson();
+    const lessonText = lesson
+      ? lesson.done
+        ? `Lesson done: ${lesson.correct}/${lesson.total}`
+        : `Lesson: ${lesson.asked}/${lesson.total}`
+      : `Lesson: 0/${LESSON_SIZE}`;
     if (weatherScore >= 14) {
-      els.canvasStatus.textContent = "Weather: Super sunny race day";
+      els.canvasStatus.textContent = `${lessonText} | Weather: Super sunny race day`;
     } else if (weatherScore >= 6) {
-      els.canvasStatus.textContent = "Weather: Mostly sunny";
+      els.canvasStatus.textContent = `${lessonText} | Weather: Mostly sunny`;
     } else if (weatherScore >= -5) {
-      els.canvasStatus.textContent = "Weather: Fair skies";
+      els.canvasStatus.textContent = `${lessonText} | Weather: Fair skies`;
     } else if (weatherScore >= -13) {
-      els.canvasStatus.textContent = "Weather: Cloudy";
+      els.canvasStatus.textContent = `${lessonText} | Weather: Cloudy`;
     } else {
-      els.canvasStatus.textContent = "Weather: Stormy";
+      els.canvasStatus.textContent = `${lessonText} | Weather: Stormy`;
     }
   }
 
