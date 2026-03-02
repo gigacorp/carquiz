@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarQuiz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Nunito:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>CarQuiz</h1>
+      <p>Fun spelling and multiplication practice with local progress tracking.</p>
+    </header>
+
+    <section class="fun-canvas-wrap" aria-label="CarQuiz animation">
+      <canvas id="funCanvas" width="860" height="220"></canvas>
+      <p id="canvasStatus" class="canvas-status">Weather: Fair skies</p>
+    </section>
+
+    <nav class="tabs" aria-label="Practice modes">
+      <button class="tab-button active" data-tab="spelling">Spelling List</button>
+      <button class="tab-button" data-tab="math">Multiplication Table</button>
+    </nav>
+
+    <section id="spelling" class="tab-panel active">
+      <div class="setup-only">
+        <h2>Weekly Spelling List</h2>
+        <p>Add one word per line, then start the game. Missed words are asked more often.</p>
+      </div>
+
+      <div class="card setup-only">
+        <label for="listName">List Name</label>
+        <input id="listName" type="text" placeholder="Week 1" />
+
+        <label for="wordList">Words (one per line)</label>
+        <textarea id="wordList" rows="8" placeholder="accommodate&#10;necessary&#10;calendar"></textarea>
+        <button id="saveListBtn" class="primary">Save List</button>
+        <button id="startSpellingBtn">Start Spelling Game</button>
+      </div>
+
+      <div class="card game-only">
+        <h3>Spelling Practice</h3>
+        <p id="spellingPrompt">Save a list to begin practice.</p>
+        <div class="practice-row">
+          <input id="spellingAnswer" type="text" placeholder="Type the correct spelling" />
+          <button id="checkSpellingBtn" class="primary">Check</button>
+          <button id="nextSpellingBtn">Next</button>
+        </div>
+        <p id="spellingFeedback" class="feedback"></p>
+        <button id="stopSpellingBtn">Back To Setup</button>
+      </div>
+
+      <div class="card setup-only">
+        <h3>Spelling Stats</h3>
+        <p id="spellingSummary">No attempts yet.</p>
+        <ul id="spellingMissedList" class="stats-list"></ul>
+      </div>
+    </section>
+
+    <section id="math" class="tab-panel">
+      <div class="setup-only">
+        <h2>Multiplication Table</h2>
+        <p>Practice multiplication facts. Missed facts appear more frequently.</p>
+      </div>
+
+      <div class="card setup-only">
+        <label for="maxFactor">Max factor</label>
+        <input id="maxFactor" type="number" min="2" max="20" value="12" />
+        <button id="startMathBtn">Start Math Game</button>
+      </div>
+
+      <div class="card game-only">
+        <h3>Math Practice</h3>
+        <p id="mathPrompt">Press Next to start.</p>
+        <div class="practice-row">
+          <input id="mathAnswer" type="number" placeholder="Answer" />
+          <button id="checkMathBtn" class="primary">Check</button>
+          <button id="nextMathBtn">Next</button>
+        </div>
+        <p id="mathFeedback" class="feedback"></p>
+        <button id="stopMathBtn">Back To Setup</button>
+      </div>
+
+      <div class="card setup-only">
+        <h3>Math Stats</h3>
+        <p id="mathSummary">No attempts yet.</p>
+        <ul id="mathMissedList" class="stats-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
